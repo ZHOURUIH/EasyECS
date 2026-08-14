@@ -106,19 +106,18 @@ Direct Column
 之后即可使用：
 
 ```csharp
-using (RoleDataECSList list = new RoleDataECSList(1024))
-{
-	list.Add(new RoleData
-	{
-		mHP = 100,
-		mSpeed = 5.0f,
-		mID = 1,
-	});
+RoleDataECSList list = new RoleDataECSList(1024);
 
-	RoleDataRef role = list[0];
-	role.mHP -= 10;
-	role.mPositionX += role.mSpeed;
-}
+list.Add(new RoleData
+{
+	mHP = 100,
+	mSpeed = 5.0f,
+	mID = 1,
+});
+
+RoleDataRef role = list[0];
+role.mHP -= 10;
+role.mPositionX += role.mSpeed;
 ```
 
 业务逻辑仍然是普通 OOP 风格：
