@@ -125,14 +125,6 @@ Package Name：
 com.zhourui.easyecs
 ```
 
-如果后续创建正式版本 Tag，也可以把版本固定到指定 Tag，例如：
-
-```text
-https://github.com/ZHOURUIH/MyFramework.git?path=/Packages/com.zhourui.easyecs#v0.1.0
-```
-
-> 上面的 `#v0.1.0` 只有在仓库已经创建对应 Tag 后才可使用。
-
 ---
 
 ## 🚀 快速开始
