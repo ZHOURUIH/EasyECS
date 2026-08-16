@@ -18,10 +18,7 @@ EasyECS 是一个面向 Unity 的 **OOP 兼容 SoA（Structure of Arrays）数�
 
 实际源码维护在：
 
-```text
-https://github.com/ZHOURUIH/MyFramework
-Packages/com.zhourui.easyecs
-```
+https://github.com/ZHOURUIH/MyFramework/tree/master/Packages/com.zhourui.easyecs
 
 展示仓库主要用于项目入口、完整文档、Benchmark 与版本说明。
 
