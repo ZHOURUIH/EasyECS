@@ -1,50 +1,104 @@
 # ⚡ EasyECS
 
-一个面向 Unity 的 **OOP 兼容 SoA（Structure of Arrays）数据布局优化插件**。
+**OOP-compatible SoA data layout optimizer for Unity**
 
-EasyECS 并不是一套完整的 ECS Framework，也不是 Unity Entities / DOTS 的替代品。
+EasyECS 是一个面向 Unity 的 **OOP 兼容 SoA（Structure of Arrays）数据布局优化插件**。
 
-它的目标是：
+它不是一套新的 ECS 游戏框架，也不是 Unity Entities / DOTS 的替代品。EasyECS 不要求项目改造成 Entity / Component / System 架构，也不引入 Archetype、Query、Scheduler、Job System 等完整 ECS 概念。
 
-> **尽量保持原有 OOP 项目的代码结构和开发习惯，只改变热点数据的底层存储布局，以较低的改造成本获得 SoA 更好的 CPU Cache 局部性和连续内存访问性能。**
+它只解决一个问题：
 
-对于需要优化的数据，只需要添加 `[ECS]` / `[NotECS]`，EasyECS 会通过 **C# Source Generator** 自动生成 SoA Storage、Ref、ECSList、ECSDictionary、Direct Column 等代码。
+> **尽量保持现有 OOP 业务代码的写法，只改变热点数据的物理存储布局，让需要连续访问的字段进入更适合 CPU Cache 的 SoA 存储。**
 
-EasyECS 现在支持 **Hybrid Storage**：同一个 Struct 中可以同时存在 Native SoA、Managed SoA 和 Managed AoS。`string`、`object`、数组、class 引用等 managed 字段不会再让整个 Struct 失去 Unsafe Backend；只有这些字段自身不会进入 Native Memory。
+通过 `[ECS]` / `[NotECS]` 标记普通 `struct`，EasyECS 会使用 **C# Source Generator** 在编译期生成：
+
+```text
+SoA / AoS Hybrid Storage
+<Type>Ref
+<Type>ECSList
+<Type>ECSDictionary<TKey>
+Direct Column
+Editor Lifecycle / Bounds / Ref Safety Check
+```
+
+业务代码仍然可以写成：
+
+```csharp
+RoleDataRef role = roles[i];
+role.mHP -= damage;
+role.mPositionX += role.mSpeed;
+```
+
+而底层存储已经可以变成：
+
+```text
+mHP[]
+mSpeed[]
+mPositionX[]
+mPositionY[]
+
+mAoS[]
+ ├─ mID
+ ├─ mModelID
+ └─ mCamp
+```
+
+---
+
+## 📌 项目定位
+
+EasyECS 适合这些场景：
+
+- 已经存在大量 OOP 业务代码，不希望整体迁移到 DOTS / Entities。
+- 有大量角色、怪物、子弹、Buff、技能状态、AI 状态等结构化数据。
+- Profiler 已经确认某些循环存在明显的数据访问热点。
+- 希望获得 SoA 数据布局的优势，但不希望引入完整 ECS 架构。
+- 希望同一套业务 API 在 Unsafe / SafeSpan / 兼容后端之间自动切换。
+
+EasyECS **不适合**这些需求：
+
+- 需要 Archetype / Chunk / Query 系统。
+- 需要 Job System / Burst 调度框架。
+- 需要完整 Entity 生命周期框架。
+- 希望替代 Unity Entities / DOTS。
+
+EasyECS 的定位始终是：
+
+```text
+OOP Business Code
+        ↓
+Source Generator
+        ↓
+Generated Data Layout / Containers
+        ↓
+SoA / AoS Hybrid Storage
+```
 
 ---
 
 ## ⚠️ 关于本仓库
 
-**当前仓库不是 EasyECS 的源码维护仓库。**
+`ZHOURUIH/EasyECS` 当前作为 EasyECS 的独立展示与文档入口。
 
-本仓库主要用于：
-
-* EasyECS 项目展示
-* README 与使用说明
-* 独立项目入口
-
-EasyECS 的实际源码目前维护在：
+EasyECS 的实际源码维护在：
 
 ```text
 https://github.com/ZHOURUIH/MyFramework
 ```
 
-具体目录：
+源码目录：
 
 ```text
 Packages/com.zhourui.easyecs
 ```
 
-因此：
-
-> **安装 EasyECS 时请使用下面提供的 MyFramework 子目录 Git URL，而不是直接安装当前仓库。**
+因此安装时请使用 **MyFramework 子目录 Git URL**，不要直接把当前展示仓库作为 UPM Package 安装。
 
 ---
 
-# 📦 安装
+## 📦 安装
 
-打开 Unity：
+Unity 中打开：
 
 ```text
 Window
@@ -61,8 +115,6 @@ https://github.com/ZHOURUIH/MyFramework.git?path=/Packages/com.zhourui.easyecs
 
 ### Gitee
 
-GitHub 访问不稳定时可以使用：
-
 ```text
 https://gitee.com/inothingtodo/MyFramework.git?path=/Packages/com.zhourui.easyecs
 ```
@@ -73,11 +125,19 @@ Package Name：
 com.zhourui.easyecs
 ```
 
+如果后续创建正式版本 Tag，也可以把版本固定到指定 Tag，例如：
+
+```text
+https://github.com/ZHOURUIH/MyFramework.git?path=/Packages/com.zhourui.easyecs#v0.1.0
+```
+
+> 上面的 `#v0.1.0` 只有在仓库已经创建对应 Tag 后才可使用。
+
 ---
 
-# 🚀 快速开始
+## 🚀 快速开始
 
-定义一个普通 Struct：
+### 1. 定义普通 Struct
 
 ```csharp
 using EasyECS;
@@ -89,1004 +149,78 @@ public struct RoleData
 	public float mSpeed;
 	public float mPositionX;
 	public float mPositionY;
+
 	[NotECS] public int mID;
 	[NotECS] public int mModelID;
 	[NotECS] public int mCamp;
 }
 ```
 
-EasyECS 会在编译阶段自动生成对应的：
+EasyECS 会自动生成对应代码，例如：
 
 ```text
+RoleDataAoSBlock
 RoleDataStorage
 RoleDataRef
 RoleDataECSList
-Direct Column
+RoleDataECSDictionary<TKey>
+
+getHPColumn()
+getSpeedColumn()
+getPositionXColumn()
+getPositionYColumn()
 ...
 ```
 
-之后即可使用：
+### 2. ECSList
 
 ```csharp
-RoleDataECSList list = new RoleDataECSList(1024);
+RoleDataECSList roles = new RoleDataECSList(1024);
 
-list.Add(new RoleData
+roles.Add(new RoleData
 {
 	mHP = 100,
 	mSpeed = 5.0f,
-	mID = 1,
+	mPositionX = 0.0f,
+	mPositionY = 0.0f,
+	mID = 1001,
+	mModelID = 10,
+	mCamp = 1,
 });
 
-RoleDataRef role = list[0];
-role.mHP -= 10;
+roles[0].mHP -= 10;
+
+RoleDataRef role = roles[0];
 role.mPositionX += role.mSpeed;
 ```
 
-业务逻辑仍然是普通 OOP 风格：
+### 3. ECSDictionary
 
 ```csharp
-RoleDataRef role = list[i];
-role.mPositionX += role.mSpeed;
-role.mHP -= damage;
-```
-
-而底层数据已经按照 SoA 方式存储。
-
----
-
-# ⚡ 三种访问方式
-
-EasyECS 可以根据代码热点程度选择不同的访问方式。
-
-### 单字段
-
-```csharp
-list[i].mHP -= 1;
-```
-
-### 多字段
-
-推荐缓存 Ref：
-
-```csharp
-RoleDataRef role = list[i];
-role.mPositionX += role.mSpeed;
-role.mPositionY += role.mSpeed;
-role.mHP -= 1;
-```
-
-### 极端热点批处理
-
-直接访问 Column：
-
-```csharp
-var hp = list.getHPColumn();
-var speed = list.getSpeedColumn();
-var positionX = list.getPositionXColumn();
-
-for (int i = 0; i < list.Count; ++i)
-{
-	hp[i] -= 1;
-	positionX[i] += speed[i];
-}
-```
-
-推荐：
-
-```text
-普通业务逻辑
-    ↓
-RoleDataRef
-
-简单单字段访问
-    ↓
-list[i]
-
-Profiler确认的热点循环
-    ↓
-Direct Column
-```
-
----
-
-# 🗂 ECSDictionary
-
-EasyECS 也会为数据结构生成：
-
-```csharp
-RoleDataECSDictionary<TKey>
-```
-
-内部结构为：
-
-```text
-Dictionary<TKey,int>
-        ↓
-    dense index
-        ↓
-RoleDataECSList
-```
-
-因此随机 Key 查询仍由 BCL `Dictionary<TKey,int>` 负责，而 Value 使用 EasyECS 的连续存储。
-
-典型写法：
-
-```csharp
-RoleDataECSDictionary<int> roles = new RoleDataECSDictionary<int>();
+RoleDataECSDictionary<int> roles = new RoleDataECSDictionary<int>(1024);
 
 roles.Add(1001, new RoleData
 {
 	mHP = 100,
 	mSpeed = 5.0f,
+	mID = 1001,
 });
 
 roles[1001].mHP -= 10;
 
-RoleDataRef role = roles[1001];
-role.mPositionX += role.mSpeed;
-```
-
-支持的常用接口包括：
-
-```text
-Add
-TryAdd
-ContainsKey
-TryGetValue
-TryGetIndex
-Remove
-Clear
-Count
-Capacity
-Comparer
-getKeyAt
-getValueAt
-foreach
-Keys
-Values
-Direct Column
-Dispose
-```
-
-`Remove` 使用 dense swap-back，因此遍历顺序不保证稳定。
-
-对于连续批处理，同样可以使用 Direct Column：
-
-```csharp
-var hp = roles.getHPColumn();
-
-for (int i = 0; i < roles.Count; ++i)
+if (roles.TryGetValue(1001, out RoleDataRef role))
 {
-	hp[i] -= 1;
+	role.mPositionX += role.mSpeed;
 }
 ```
 
 ---
 
-# 📈 性能测试
+## 🧩 `[ECS]` / `[NotECS]` 规则
 
-以下数据全部来自实际运行日志。
+### Struct 标记 `[ECS]`
 
-> 当前表格记录每个 Benchmark 测试项的 **Median 耗时 / 单位操作耗时**。数值越低越好。
-
-以下结果全部来自实际运行日志。为了让 README 可读且便于横向比较，当前结果表记录 **每一个 Benchmark 测试项的 Median 耗时与单位操作耗时**，格式统一为：
-
-```text
-Median ms / ns per entity(or op)
-```
-
-数值越低越好。每轮当前 Benchmark 使用：
-
-```text
-EntityCount      = 500000
-SampleCount      = 15
-WarmupCount      = 3
-RandomWriteCount = 50000
-```
-
-`RandomWriteCount` 仅用于 Dictionary 随机修改测试。原始日志中的 Min / Max 用于观察采样抖动，README 不把它们作为最终性能排序指标，因此下面统一使用 Median。
-
-### PC 测试环境
-
-```text
-Unity       : 6000.3.21f1
-Platform    : Windows x64 Player
-Graphics    : Direct3D 12
-GPU         : NVIDIA GeForce RTX 2060
-CPU threads : 32
-```
-
-#### PC 当前 backend-agnostic Benchmark：SafeSpan / SafeRegistry
-
-SafeSpan 与 SafeRegistry 均使用当前 backend-agnostic Benchmark，同一套业务测试代码不包含 backend-specific pointer 访问。
-
-#### List：修改 1 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `List<RoleData>` | 4.035 / 8.069 | 3.837 / 7.675 |
-| `RoleData[]` | 0.323 / 0.646 | 0.297 / 0.595 |
-| `ECS list[i]` | 0.358 / 0.716 | 0.815 / 1.630 |
-| `ECS Ref` | 0.370 / 0.741 | 0.810 / 1.619 |
-| `ECS Direct` | 0.176 / 0.352 | 0.183 / 0.366 |
-
-#### List：访问 2 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `List<RoleData>` | 3.858 / 7.715 | 4.011 / 8.022 |
-| `RoleData[]` | 0.313 / 0.626 | 0.306 / 0.612 |
-| `ECS list[i]` | 0.637 / 1.274 | 1.468 / 2.935 |
-| `ECS Ref` | 0.449 / 0.898 | 1.410 / 2.821 |
-| `ECS Direct` | 0.220 / 0.441 | 0.232 / 0.465 |
-
-#### List：访问 4 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `List<RoleData>` | 2.141 / 4.282 | 2.224 / 4.448 |
-| `RoleData[]` | 0.503 / 1.007 | 0.472 / 0.944 |
-| `ECS list[i]` | 1.478 / 2.955 | 3.808 / 7.615 |
-| `ECS Ref` | 0.982 / 1.964 | 3.504 / 7.007 |
-| `ECS Direct` | 0.582 / 1.164 | 0.502 / 1.003 |
-
-#### Dictionary：随机 Key 读取
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `Dictionary<int,RoleData>` | 14.235 / 28.470 | 13.822 / 27.644 |
-| `IndexMap + RoleData[]` | 21.080 / 42.160 | 20.982 / 41.963 |
-| `IndexMap + int[]` | 7.639 / 15.279 | 7.741 / 15.483 |
-| `ECS Inline Indexer` | 8.736 / 17.472 | 13.122 / 26.245 |
-| `ECS Local Ref` | 8.898 / 17.795 | 14.050 / 28.100 |
-| `ECS TryGetValue` | 8.585 / 17.170 | 11.511 / 23.023 |
-
-#### Dictionary：随机 Key 修改
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `Dictionary<int,RoleData>` | 1.162 / 23.240 | 1.364 / 27.286 |
-| `IndexMap + RoleData[]` | 0.805 / 16.102 | 0.962 / 19.242 |
-| `IndexMap + int[]` | 0.701 / 14.014 | 0.730 / 14.598 |
-| `ECS Inline Indexer` | 0.781 / 15.614 | 1.047 / 20.936 |
-| `ECS Local Ref` | 0.783 / 15.654 | 1.044 / 20.888 |
-| `ECS TryGetValue` | 0.791 / 15.816 | 0.826 / 16.510 |
-
-#### Dictionary：连续存储全量修改 1 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `Dictionary Key全量更新` | 10.515 / 21.030 | 10.419 / 20.839 |
-| `Dense RoleData[]` | 0.278 / 0.556 | 0.284 / 0.568 |
-| `Dense int[]` | 0.143 / 0.285 | 0.151 / 0.301 |
-| `ECS Dense Ref` | 0.447 / 0.894 | 0.859 / 1.718 |
-| `ECS Direct` | 0.235 / 0.470 | 0.243 / 0.485 |
-
-#### Dictionary：连续存储全量访问 4 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `Dictionary Key全量更新` | 6.679 / 13.359 | 6.843 / 13.687 |
-| `Dense RoleData[]` | 0.528 / 1.056 | 0.459 / 0.917 |
-| `ECS Dense Ref` | 1.087 / 2.173 | 3.734 / 7.468 |
-| `ECS Direct` | 0.581 / 1.161 | 0.590 / 1.180 |
-
-#### Dictionary：Dense 全量更新 + 10% 随机 Key 修改
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `Dictionary<int,RoleData>` | 14.203 / 25.824 | 14.242 / 25.894 |
-| `IndexMap + RoleData[]` | 1.733 / 3.151 | 1.277 / 2.322 |
-| `ECS Direct+LocalRef` | 1.094 / 1.989 | 1.147 / 2.085 |
-
-#### Dictionary：仅遍历 Key
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `for + getKeyAt` | 0.189 / 0.378 | 0.177 / 0.354 |
-| `foreach dict + item.Key` | 0.230 / 0.460 | 0.212 / 0.423 |
-| `foreach dict.Keys` | 1.909 / 3.818 | 1.880 / 3.760 |
-
-#### Dictionary：仅遍历 Value 并修改 1 个字段
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `for + getValueAt` | 0.470 / 0.939 | 0.857 / 1.714 |
-| `foreach dict + item.Value` | 0.421 / 0.841 | 0.812 / 1.623 |
-| `foreach dict.Values` | 1.825 / 3.649 | 1.841 / 3.681 |
-| `Direct Column` | 0.235 / 0.470 | 0.227 / 0.455 |
-
-#### Dictionary：同时遍历 Key + Value
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `for getKeyAt+getValueAt` | 0.538 / 1.075 | 0.954 / 1.907 |
-| `foreach dict` | 0.400 / 0.800 | 0.855 / 1.709 |
-
-#### Enumerator：仅读取 Key
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `int[] for` | 0.123 / 0.246 | 0.117 / 0.235 |
-| `int[] foreach` | 0.123 / 0.247 | 0.131 / 0.263 |
-| `ECS for + getKeyAt` | 0.196 / 0.391 | 0.187 / 0.373 |
-| `ECS foreach dict + item.Key` | 0.215 / 0.430 | 0.220 / 0.440 |
-| `ECS foreach dict.Keys` | 1.848 / 3.696 | 1.876 / 3.752 |
-| `ECS Keys手动Enumerator` | 1.849 / 3.698 | 1.853 / 3.706 |
-| `Dictionary foreach` | 3.802 / 7.604 | 4.044 / 8.088 |
-| `Dictionary foreach Keys` | 0.547 / 1.094 | 0.688 / 1.377 |
-| `Dictionary Keys手动Enumerator` | 0.495 / 0.989 | 0.448 / 0.896 |
-
-#### Enumerator：仅读取 Value.mHP
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `RoleData[] for` | 0.205 / 0.410 | 0.216 / 0.432 |
-| `RoleData[] foreach` | 0.216 / 0.432 | 0.211 / 0.421 |
-| `ECS for + getValueAt` | 0.450 / 0.900 | 0.871 / 1.742 |
-| `ECS foreach dict + Value` | 0.403 / 0.806 | 0.846 / 1.691 |
-| `ECS foreach dict.Values` | 1.801 / 3.603 | 1.817 / 3.634 |
-| `ECS Values手动Enumerator` | 1.804 / 3.609 | 1.816 / 3.631 |
-| `Dictionary foreach` | 3.776 / 7.551 | 3.793 / 7.586 |
-| `Dictionary foreach Values` | 0.827 / 1.655 | 0.781 / 1.562 |
-| `Dictionary Values手动Enumerator` | 0.431 / 0.861 | 0.399 / 0.799 |
-
-#### Enumerator：修改 Value.mHP
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `ECS for + getValueAt` | 0.449 / 0.898 | 0.852 / 1.703 |
-| `ECS foreach dict + Value` | 0.398 / 0.795 | 0.839 / 1.678 |
-| `ECS foreach dict.Values` | 1.790 / 3.580 | 1.843 / 3.686 |
-| `ECS Values手动Enumerator` | 1.792 / 3.584 | 1.840 / 3.680 |
-| `ECS Direct Column` | 0.235 / 0.469 | 0.235 / 0.469 |
-
-#### Enumerator：同时读取 Key + Value
-
-| 测试项 | SafeSpan | SafeRegistry |
-|---|---:|---:|
-| `ECS for getKeyAt+getValueAt` | 0.539 / 1.078 | 0.973 / 1.947 |
-| `ECS foreach dict` | 0.415 / 0.830 | 0.825 / 1.650 |
-| `ECS 手动Enumerator` | 0.401 / 0.801 | 0.805 / 1.610 |
-| `Dictionary foreach` | 3.835 / 7.671 | 3.828 / 7.656 |
-| `Dictionary 手动Enumerator` | 0.531 / 1.062 | 0.575 / 1.151 |
-
-
-#### PC Unsafe 历史 Benchmark
-
-PC Unsafe 是在较早一次 Generator / Benchmark 修订上测得的完整结果。它已经覆盖 List、Dictionary、Dense、Mixed 与 Enumerator，但当时随机 Dictionary Benchmark 仍额外包含 `IndexMap + int*` 研究基线，而且部分 Dictionary 微基准实现随后又做过调整。
-
-因此下面结果保留作为 **Unsafe 在 PC 上的历史实测数据**，但不应拿它与上面的当前 SafeSpan / SafeRegistry 做严格微秒级横向排名。当前正式 Sample 已移除业务代码中的 `int*` backend-specific 基线。
-
-旧版随机修改微基准的 `ns/op` 归一化口径也与当前版本不同，因此本节只保留最可靠的 **Median ms**，不展示旧版 `ns/op`。
-
-#### List：修改 1 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `List<RoleData>` | 3.995 |
-| `RoleData[]` | 0.292 |
-| `ECS list[i]` | 0.274 |
-| `ECS Ref` | 0.271 |
-| `ECS Direct` | 0.078 |
-
-#### List：访问 2 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `List<RoleData>` | 3.773 |
-| `RoleData[]` | 0.317 |
-| `ECS list[i]` | 0.207 |
-| `ECS Ref` | 0.219 |
-| `ECS Direct` | 0.098 |
-
-#### List：访问 4 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `List<RoleData>` | 2.124 |
-| `RoleData[]` | 0.461 |
-| `ECS list[i]` | 0.819 |
-| `ECS Ref` | 0.535 |
-| `ECS Direct` | 0.326 |
-
-#### Dictionary：随机 Key 读取
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `Dictionary<int,RoleData>` | 11.993 |
-| `IndexMap + RoleData[]` | 16.519 |
-| `IndexMap + int[]` | 6.731 |
-| `IndexMap + int*` | 6.758 |
-| `ECS Inline Indexer` | 7.470 |
-| `ECS Local Ref` | 7.642 |
-| `ECS TryGetValue` | 7.511 |
-
-#### Dictionary：随机 Key 修改
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `Dictionary<int,RoleData>` | 24.653 |
-| `IndexMap + RoleData[]` | 17.320 |
-| `IndexMap + int[]` | 7.226 |
-| `IndexMap + int*` | 7.156 |
-| `ECS Inline Indexer` | 7.792 |
-| `ECS Local Ref` | 8.051 |
-| `ECS TryGetValue` | 10.206 |
-
-#### Dictionary：连续存储全量修改 1 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `Dictionary Key全量更新` | 10.338 |
-| `Dense RoleData[]` | 0.313 |
-| `Dense int[]` | 0.156 |
-| `ECS Dense Ref` | 0.188 |
-| `ECS Direct` | 0.091 |
-
-#### Dictionary：连续存储全量访问 4 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `Dictionary Key全量更新` | 6.888 |
-| `Dense RoleData[]` | 0.450 |
-| `ECS Dense Ref` | 0.500 |
-| `ECS Direct` | 0.321 |
-
-#### Dictionary：Dense 全量更新 + 10% 随机 Key 修改
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `Dictionary<int,RoleData>` | 9.780 |
-| `IndexMap + RoleData[]` | 1.949 |
-| `ECS Direct+LocalRef` | 1.101 |
-
-#### Dictionary：仅遍历 Key
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `for + getKeyAt` | 0.156 |
-| `foreach dict + item.Key` | 0.238 |
-| `foreach dict.Keys` | 1.869 |
-
-#### Dictionary：仅遍历 Value 并修改 1 个字段
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `for + getValueAt` | 0.176 |
-| `foreach dict + item.Value` | 0.245 |
-| `foreach dict.Values` | 1.811 |
-| `Direct Column` | 0.078 |
-
-#### Dictionary：同时遍历 Key + Value
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `for getKeyAt+getValueAt` | 0.224 |
-| `foreach dict` | 0.275 |
-
-#### Enumerator：仅读取 Key
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `int[] for` | 0.118 |
-| `int[] foreach` | 0.121 |
-| `ECS for + getKeyAt` | 0.133 |
-| `ECS foreach dict + item.Key` | 0.220 |
-| `ECS foreach dict.Keys` | 1.855 |
-| `ECS Keys手动Enumerator` | 1.834 |
-| `Dictionary foreach` | 3.788 |
-| `Dictionary foreach Keys` | 0.945 |
-| `Dictionary Keys手动Enumerator` | 0.500 |
-
-#### Enumerator：仅读取 Value.mHP
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `RoleData[] for` | 0.229 |
-| `RoleData[] foreach` | 0.230 |
-| `ECS for + getValueAt` | 0.156 |
-| `ECS foreach dict + Value` | 0.243 |
-| `ECS foreach dict.Values` | 1.864 |
-| `ECS Values手动Enumerator` | 1.829 |
-| `Dictionary foreach` | 3.782 |
-| `Dictionary foreach Values` | 0.859 |
-| `Dictionary Values手动Enumerator` | 0.424 |
-
-#### Enumerator：修改 Value.mHP
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `ECS for + getValueAt` | 0.173 |
-| `ECS foreach dict + Value` | 0.239 |
-| `ECS foreach dict.Values` | 1.810 |
-| `ECS Values手动Enumerator` | 1.793 |
-| `ECS Direct Column` | 0.078 |
-
-#### Enumerator：同时读取 Key + Value
-
-| 测试项 | Unsafe（历史 Median ms） |
-|---|---:|
-| `ECS for getKeyAt+getValueAt` | 0.220 |
-| `ECS foreach dict` | 0.268 |
-| `ECS 手动Enumerator` | 0.266 |
-| `Dictionary foreach` | 3.828 |
-| `Dictionary 手动Enumerator` | 0.556 |
-
-
-### Android 真机测试环境
-
-```text
-Device            : HUAWEI ALP-AL00
-OS                : Android 10 / API 29
-CPU               : ARM64, 8 Cores
-big.LITTLE        : 4 big + 4 little
-Memory            : 3648 MB
-Unity             : 6000.3.21f1
-Build Type        : Release
-Scripting Backend : IL2CPP
-CPU Target        : arm64-v8a
-Code Stripping    : Enabled
-```
-
-Android 的 Unsafe、SafeSpan、SafeRegistry 均在同一台真机、同一套当前 backend-agnostic Benchmark 上运行。
-
-三轮测试为连续执行，手机温度、动态调频与大小核调度会影响绝对耗时。因此这些数据适合观察数量级、访问模式和 Backend 的结构性差异，不应把非常小的毫秒差当成跨设备固定结论。
-
-### Android Benchmark
-
-#### List：修改 1 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `List<RoleData>` | 12.610 / 25.221 | 13.157 / 26.315 | 12.602 / 25.204 |
-| `RoleData[]` | 3.263 / 6.526 | 3.524 / 7.048 | 3.285 / 6.571 |
-| `ECS list[i]` | 1.063 / 2.126 | 2.305 / 4.609 | 6.713 / 13.425 |
-| `ECS Ref` | 1.063 / 2.126 | 2.343 / 4.685 | 6.563 / 13.126 |
-| `ECS Direct` | 0.750 / 1.500 | 1.068 / 2.135 | 1.166 / 2.332 |
-
-#### List：访问 2 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `List<RoleData>` | 12.436 / 24.871 | 12.532 / 25.065 | 12.612 / 25.224 |
-| `RoleData[]` | 3.257 / 6.513 | 3.408 / 6.817 | 3.301 / 6.602 |
-| `ECS list[i]` | 1.278 / 2.555 | 3.785 / 7.570 | 13.137 / 26.274 |
-| `ECS Ref` | 1.317 / 2.633 | 2.905 / 5.810 | 12.673 / 25.346 |
-| `ECS Direct` | 0.940 / 1.879 | 1.390 / 2.780 | 1.595 / 3.190 |
-
-#### List：访问 4 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `List<RoleData>` | 12.189 / 24.377 | 12.243 / 24.485 | 12.298 / 24.597 |
-| `RoleData[]` | 4.256 / 8.513 | 2.934 / 5.869 | 4.321 / 8.642 |
-| `ECS list[i]` | 2.758 / 5.516 | 8.879 / 17.757 | 32.704 / 65.408 |
-| `ECS Ref` | 2.743 / 5.486 | 4.802 / 9.603 | 30.067 / 60.133 |
-| `ECS Direct` | 2.683 / 5.367 | 3.380 / 6.759 | 3.381 / 6.761 |
-
-#### Dictionary：随机 Key 读取
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `Dictionary<int,RoleData>` | 210.057 / 420.115 | 210.311 / 420.622 | 211.278 / 422.556 |
-| `IndexMap + RoleData[]` | 211.423 / 422.846 | 235.051 / 470.102 | 216.365 / 432.730 |
-| `IndexMap + int[]` | 204.765 / 409.529 | 209.595 / 419.190 | 206.285 / 412.571 |
-| `ECS Inline Indexer` | 210.568 / 421.135 | 208.101 / 416.201 | 218.437 / 436.874 |
-| `ECS Local Ref` | 211.314 / 422.628 | 205.736 / 411.471 | 214.262 / 428.523 |
-| `ECS TryGetValue` | 209.584 / 419.168 | 210.138 / 420.276 | 214.062 / 428.124 |
-
-#### Dictionary：随机 Key 修改
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `Dictionary<int,RoleData>` | 24.967 / 499.344 | 24.878 / 497.562 | 25.123 / 502.468 |
-| `IndexMap + RoleData[]` | 31.220 / 624.396 | 31.136 / 622.728 | 30.819 / 616.386 |
-| `IndexMap + int[]` | 27.283 / 545.656 | 27.256 / 545.126 | 27.388 / 547.750 |
-| `ECS Inline Indexer` | 27.467 / 549.334 | 27.583 / 551.656 | 28.051 / 561.010 |
-| `ECS Local Ref` | 27.359 / 547.188 | 27.402 / 548.042 | 28.213 / 564.260 |
-| `ECS TryGetValue` | 27.295 / 545.906 | 27.661 / 553.228 | 28.098 / 561.958 |
-
-#### Dictionary：连续存储全量修改 1 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `Dictionary Key全量更新` | 51.985 / 103.970 | 52.605 / 105.209 | 51.838 / 103.675 |
-| `Dense RoleData[]` | 3.236 / 6.472 | 3.232 / 6.464 | 3.622 / 7.244 |
-| `Dense int[]` | 0.743 / 1.485 | 0.743 / 1.486 | 0.742 / 1.483 |
-| `ECS Dense Ref` | 1.062 / 2.124 | 2.486 / 4.972 | 6.725 / 13.449 |
-| `ECS Direct` | 0.748 / 1.496 | 0.955 / 1.909 | 1.167 / 2.334 |
-
-#### Dictionary：连续存储全量访问 4 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `Dictionary Key全量更新` | 52.557 / 105.114 | 52.583 / 105.166 | 52.134 / 104.268 |
-| `Dense RoleData[]` | 3.321 / 6.642 | 3.315 / 6.629 | 3.808 / 7.617 |
-| `ECS Dense Ref` | 2.420 / 4.841 | 5.150 / 10.300 | 30.271 / 60.543 |
-| `ECS Direct` | 2.663 / 5.325 | 3.225 / 6.450 | 3.385 / 6.771 |
-
-#### Dictionary：Dense 全量更新 + 10% 随机 Key 修改
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `Dictionary<int,RoleData>` | 77.504 / 140.917 | 77.764 / 141.388 | 81.010 / 147.291 |
-| `IndexMap + RoleData[]` | 34.900 / 63.455 | 34.873 / 63.405 | 34.503 / 62.732 |
-| `ECS Direct+LocalRef` | 28.815 / 52.390 | 29.384 / 53.426 | 30.138 / 54.795 |
-
-#### Dictionary：仅遍历 Key
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `for + getKeyAt` | 0.954 / 1.908 | 0.954 / 1.908 | 0.955 / 1.910 |
-| `foreach dict + item.Key` | 1.591 / 3.181 | 1.591 / 3.181 | 1.591 / 3.181 |
-| `foreach dict.Keys` | 1.270 / 2.541 | 1.269 / 2.539 | 1.239 / 2.478 |
-
-#### Dictionary：仅遍历 Value 并修改 1 个字段
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `for + getValueAt` | 1.061 / 2.122 | 2.478 / 4.955 | 6.761 / 13.522 |
-| `foreach dict + item.Value` | 1.803 / 3.606 | 2.904 / 5.807 | 8.849 / 17.699 |
-| `foreach dict.Values` | 1.107 / 2.214 | 2.468 / 4.936 | 6.678 / 13.356 |
-| `Direct Column` | 0.766 / 1.531 | 0.955 / 1.909 | 1.167 / 2.334 |
-
-#### Dictionary：同时遍历 Key + Value
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `for getKeyAt+getValueAt` | 1.617 / 3.233 | 3.111 / 6.223 | 7.521 / 15.042 |
-| `foreach dict` | 2.067 / 4.133 | 3.133 / 6.266 | 8.078 / 16.156 |
-
-#### Enumerator：仅读取 Key
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `int[] for` | 0.639 / 1.277 | 0.638 / 1.275 | 0.640 / 1.279 |
-| `int[] foreach` | 0.638 / 1.276 | 0.639 / 1.278 | 0.639 / 1.278 |
-| `ECS for + getKeyAt` | 0.956 / 1.912 | 0.957 / 1.915 | 0.956 / 1.913 |
-| `ECS foreach dict + item.Key` | 1.591 / 3.182 | 1.591 / 3.182 | 1.592 / 3.184 |
-| `ECS foreach dict.Keys` | 1.269 / 2.539 | 1.269 / 2.538 | 1.258 / 2.516 |
-| `ECS Keys手动Enumerator` | 1.270 / 2.540 | 1.269 / 2.538 | 1.270 / 2.540 |
-| `Dictionary foreach` | 13.611 / 27.222 | 13.647 / 27.294 | 13.795 / 27.591 |
-| `Dictionary foreach Keys` | 4.978 / 9.956 | 5.000 / 10.000 | 4.983 / 9.966 |
-| `Dictionary Keys手动Enumerator` | 4.945 / 9.891 | 4.950 / 9.899 | 4.922 / 9.845 |
-
-#### Enumerator：仅读取 Value.mHP
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `RoleData[] for` | 2.573 / 5.146 | 2.639 / 5.277 | 2.763 / 5.526 |
-| `RoleData[] foreach` | 2.580 / 5.159 | 2.640 / 5.279 | 2.758 / 5.517 |
-| `ECS for + getValueAt` | 0.743 / 1.486 | 2.432 / 4.864 | 6.645 / 13.290 |
-| `ECS foreach dict + Value` | 1.709 / 3.418 | 2.801 / 5.601 | 8.454 / 16.907 |
-| `ECS foreach dict.Values` | 1.079 / 2.158 | 2.347 / 4.694 | 6.597 / 13.194 |
-| `ECS Values手动Enumerator` | 1.063 / 2.125 | 2.344 / 4.687 | 6.584 / 13.168 |
-| `Dictionary foreach` | 13.543 / 27.085 | 13.548 / 27.096 | 13.805 / 27.609 |
-| `Dictionary foreach Values` | 5.713 / 11.425 | 5.623 / 11.246 | 5.548 / 11.097 |
-| `Dictionary Values手动Enumerator` | 5.701 / 11.401 | 5.706 / 11.411 | 5.585 / 11.171 |
-
-#### Enumerator：修改 Value.mHP
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `ECS for + getValueAt` | 1.061 / 2.122 | 2.487 / 4.974 | 6.748 / 13.496 |
-| `ECS foreach dict + Value` | 1.805 / 3.609 | 2.906 / 5.811 | 8.628 / 17.256 |
-| `ECS foreach dict.Values` | 1.103 / 2.205 | 2.469 / 4.939 | 6.679 / 13.357 |
-| `ECS Values手动Enumerator` | 1.109 / 2.218 | 2.465 / 4.930 | 6.675 / 13.350 |
-| `ECS Direct Column` | 0.781 / 1.563 | 0.954 / 1.908 | 1.168 / 2.335 |
-
-#### Enumerator：同时读取 Key + Value
-
-| 测试项 | Unsafe | SafeSpan | SafeRegistry |
-|---|---:|---:|---:|
-| `ECS for getKeyAt+getValueAt` | 1.606 / 3.211 | 3.125 / 6.250 | 7.478 / 14.956 |
-| `ECS foreach dict` | 2.057 / 4.115 | 3.117 / 6.234 | 8.317 / 16.633 |
-| `ECS 手动Enumerator` | 2.053 / 4.106 | 3.126 / 6.251 | 8.332 / 16.664 |
-| `Dictionary foreach` | 14.000 / 27.999 | 14.039 / 28.078 | 13.888 / 27.776 |
-| `Dictionary 手动Enumerator` | 13.589 / 27.178 | 13.735 / 27.470 | 13.669 / 27.338 |
-
-
-### Benchmark 结论
-
-从 PC 与 Android 真机结果可以得到几条比较稳定的结论：
-
-- **Unsafe 的 Native Storage 是最高性能路径。** Android ARM64 + IL2CPP 下，List 单字段 `ECS Direct` 为 `0.750 ms`，`ECS Ref` 为 `1.063 ms`；Dictionary 连续存储单字段场景中 `Dense int[]` 为 `0.743 ms`，`ECS Direct` 为 `0.748 ms`，已经非常接近手写连续数组。这里的 Benchmark 数据来自全部字段可使用 Native Storage 的 `RoleData`；新增的 Managed Hybrid Storage 主要解决“少量引用字段拖累整个结构体”的问题，不应直接把这些数字当作 managed 字段访问性能。
-- **SafeSpan 是安全路径的性能默认选择。** 相比 SafeRegistry，Ref / indexer 在多字段访问时明显更快，同时 Direct Column 仍然保持较低成本。
-- **SafeRegistry 的主要定位是旧运行环境与热更新兼容。** 它的 Ref 在多字段热点中成本明显更高，但 Direct Column 与 SafeSpan 很接近，因此兼容模式下仍然可以通过 Direct Column 获得良好的批处理性能。
-- **随机 Dictionary 查询的主要成本来自 Hash 查找。** Android 真机随机读取时三个 Backend 的 EasyECS 路径差距远小于 Dense 批处理场景，说明数据布局优化最适合连续、高频访问。
-- **热点循环优先使用 Direct Column。** 普通业务逻辑仍建议使用 `Ref` / indexer，只有 Profiler 确认的高频批处理才需要下沉到 Direct Column。
-
-Benchmark 是特定设备、Unity 版本、编译器和运行状态下的测量结果，不代表所有项目都能得到完全相同的倍率。建议通过 `Samples~/Benchmark` 在目标项目和目标设备上重新运行。
-
----
-
-# 🎯 适用场景
-
-EasyECS 比较适合：
-
-* 大量同构数据
-* 每帧持续遍历
-* 单次循环只访问部分字段
-* 数万、数十万甚至更多数据
-* 对 CPU Cache 较敏感的热点逻辑
-* 已经存在大量 OOP 代码的项目
-* 不希望整体迁移到 DOTS / 完整 ECS 的项目
-* 希望针对热点逐步进行 SoA 优化的项目
-
-典型场景：
-
-```text
-角色运行时数据
-怪物状态
-子弹 / 飞行物
-伤害计算
-位置 / 速度
-Buff运行时状态
-AI运行状态
-战斗模拟
-大规模单位数据
-```
-
----
-
-## 不建议使用的场景
-
-以下情况通常没有必要使用 EasyECS：
-
-* 数据量很少
-* 很少进行连续遍历
-* 每次基本都会读取 Struct 的全部字段
-* 数据主要由 managed reference 组成
-* 强依赖稳定对象身份
-* 结构操作远多于批量数据处理
-* Profiler 中并不存在对应热点
-
-EasyECS 并不是为了：
-
-```text
-把项目中的所有 List<T> 全部替换
-```
-
-而是：
-
-> **只优化真正值得优化的数据。**
-
----
-
-# ✨ 核心特点
-
-| 功能 | 状态 |
-|---|---|
-| OOP 风格访问 | ✅ |
-| Source Generator 自动生成 | ✅ |
-| `[ECS] / [NotECS]` | ✅ |
-| SoA / AoS 混合布局 | ✅ |
-| Managed / Native Hybrid Storage | ✅ |
-| Managed ECS 字段 SoA | ✅ |
-| Unsafe Backend | ✅ |
-| SafeSpan Backend | ✅ |
-| SafeRegistry Backend | ✅ |
-| ECSList | ✅ |
-| ECSDictionary | ✅ |
-| Dictionary Enumerator | ✅ |
-| RoleDataRef | ✅ |
-| Direct Column | ✅ |
-| Resize 后 Ref 保持有效 | ✅ |
-| Editor 越界检测 | ✅ |
-| Editor 生命周期检测 | ✅ |
-| 遗漏 Dispose 检测 | ✅ |
-| Finalizer 兜底 | ✅ |
-| Benchmark Sample | ✅ |
-| UPM Git 安装 | ✅ |
-
-Hybrid Storage 的核心目标是：
-
-```text
-热点 unmanaged 字段
-→ 尽可能继续使用 Native SoA
-
-managed 字段
-→ 保持 GC 正确管理
-
-业务 API
-→ 不需要区分底层 Backend
-```
-
----
-
-# 🧪 Benchmark Sample
-
-EasyECS Package 自带完整测试与 Benchmark Sample。
-
-安装插件以后可以通过菜单：
-
-```text
-EasyECS
-    Import Benchmark Sample
-```
-
-也可以在 Package Manager 中：
-
-```text
-EasyECS
-    Samples
-        Benchmark
-            Import
-```
-
-导入后主要包含：
-
-```text
-RoleData.cs
-RoleDataBenchmark.cs
-RoleDataDictionaryBenchmark.cs
-RoleDataDictionaryEnumeratorBenchmark.cs
-EasyECSRuntimeUnitTest.cs
-```
-
-覆盖内容包括：
-
-```text
-ECSList
-├─ Add / Get / Set
-├─ Resize
-├─ Resize后旧Ref
-├─ Direct Column
-├─ Clear
-├─ RemoveAtSwapBack
-└─ Dispose
-
-ECSDictionary
-├─ Add / TryAdd
-├─ Indexer / TryGetValue
-├─ TryGetIndex
-├─ Remove / dense swap-back
-├─ foreach
-├─ Keys / Values
-├─ Direct Column
-└─ Dispose
-
-Managed / Hybrid
-├─ managed ECS字段
-├─ managed AoS字段
-├─ string / object / null
-├─ Resize后旧Ref
-├─ Direct Column
-├─ RemoveAtSwapBack
-├─ Clear
-└─ Dictionary路径
-
-Editor
-├─ List / Column越界
-├─ Dispose后访问
-├─ Clear / Remove后的旧Ref
-├─ SwapBack移动Ref
-├─ 结构变化后旧Column
-└─ 遗漏Dispose检测
-```
-
-性能部分则覆盖：
-
-```text
-List
-Dictionary随机访问
-Dictionary连续遍历
-Dense + Random混合场景
-Dictionary foreach
-Keys / Values
-Enumerator
-Direct Column
-```
-
----
-
-# ✅ 当前测试与验证状态
-
-Source Generator Regression Test 已随着 Hybrid Storage 设计扩展为 **42 个测试项**，覆盖重点包括：
-
-```text
-布局生成
-Backend选择
-Unsafe / SafeSpan / SafeRegistry
-Managed Hybrid Unsafe
-Managed ECS字段
-Managed AoS
-ECSDictionary Hybrid
-Resize提交顺序
-构造失败清理
-标识符转义
-代码生成格式
-ECS001 ~ ECS004
-```
-
-Runtime Unit Test 覆盖：
-
-```text
-ECSList
-ECSDictionary
-Managed字段
-Ref生命周期
-Direct Column
-RemoveAtSwapBack
-Clear
-Resize
-Dispose
-Editor安全检查
-```
-
-在 Hybrid Storage 改动之前，Android ARM64 + IL2CPP 已经分别实际跑过：
-
-```text
-Unsafe
-SafeSpan
-SafeRegistry
-```
-
-三条 Backend 路径。
-
-当前 Hybrid Storage 是在这轮真机验证之后新增的核心存储路径，因此 **不能把之前的 Android 通过结果直接当成 Hybrid Storage 已验证结果**。
-
-发布包含 Hybrid Storage 的版本前，应重新运行最新：
-
-```text
-Generator Test
-→ 42项
-
-Unity Runtime Unit Test
-→ 重点检查 managed List / Dictionary
-→ Resize后旧Ref
-→ Direct Column
-→ RemoveAtSwapBack
-→ Clear
-→ Dispose
-```
-
-Benchmark 表中的 Unsafe 数据使用的是纯 Native `RoleData`，用于反映 Native Storage 热路径性能；它并不代表 `string` / `object` 等 managed 字段本身的访问性能。
-
----
-
-# 🆚 与完整 ECS / DOTS 的区别
-
-EasyECS **不是完整 ECS Framework**。
-
-| 项目 | EasyECS | ECS / DOTS |
-|---|---|---|
-| 数据布局优化 | ✅ | ✅ |
-| OOP 业务代码 | ✅ 保留 | 通常需要较大改造 |
-| Entity | ❌ | ✅ |
-| Component | ❌ | ✅ |
-| System | ❌ | ✅ |
-| Archetype | ❌ | 常见 |
-| Query | ❌ | ✅ |
-| Scheduler | ❌ | 常见 |
-| Source Generator | ✅ | 不一定 |
-| 渐进式接入 | ✅ | 相对困难 |
-| 老项目改造成本 | 较低 | 较高 |
-
-EasyECS 更准确的定位是：
-
-```text
-OOP-compatible SoA Data Layout Optimizer
-```
-
-而不是：
-
-```text
-Full ECS Framework
-```
-
----
-
-# 🧩 `[ECS]` 与 `[NotECS]`
-
-Struct 标记：
-
-```csharp
-[ECS]
-```
-
-后，字段默认按照 ECS/SoA 方式存储：
+字段默认进入 ECS / SoA：
 
 ```csharp
 [ECS]
@@ -1094,21 +228,24 @@ public struct RoleData
 {
 	public int mHP;
 	public float mSpeed;
+
 	[NotECS] public int mID;
 }
 ```
 
-逻辑布局：
+近似布局：
 
 ```text
 mHP[]
 mSpeed[]
 
-AoS[]
-    mID
+mAoS[]
+ └─ mID
 ```
 
-也可以反过来：
+### Struct 标记 `[NotECS]`
+
+字段默认进入 AoS，只有显式 `[ECS]` 字段进入 SoA：
 
 ```csharp
 [NotECS]
@@ -1122,25 +259,34 @@ public struct RoleData
 }
 ```
 
-基础规则：
+### 字段标记优先于 Struct 默认规则
 
-| Struct | Field | 最终逻辑布局 |
-|---|---|---|
-| `[ECS]` | 无 | SoA |
-| `[ECS]` | `[NotECS]` | AoS |
-| `[NotECS]` | 无 | AoS |
-| `[NotECS]` | `[ECS]` | SoA |
-
-字段 Attribute 会覆盖 Struct 默认设置。
-
-这里的 `[ECS] / [NotECS]` 决定的是 **SoA / AoS 逻辑布局**，并不等价于：
+规则可以总结为：
 
 ```text
-[ECS]    = Native
-[NotECS] = Managed
+Struct [ECS]
+→ Field 默认 ECS
+→ Field [NotECS] 覆盖为 AoS
+
+Struct [NotECS]
+→ Field 默认 AoS
+→ Field [ECS] 覆盖为 SoA
 ```
 
-managed 字段仍然遵循 `[ECS] / [NotECS]` 的布局语义。
+同一个声明同时出现：
+
+```csharp
+[ECS]
+[NotECS]
+```
+
+会产生 Source Generator 错误。
+
+---
+
+## 🧠 Hybrid Storage
+
+EasyECS 不要求一个 `struct` 的所有字段都必须是 unmanaged。
 
 例如：
 
@@ -1154,209 +300,48 @@ public struct RoleRuntimeData
 	public object mPayload;
 
 	[NotECS] public int mID;
-	[NotECS] public string mModelPath;
 }
 ```
 
-开启 Unsafe 后：
+当允许 Unsafe，并且结构体中存在适合 Native Storage 的字段时，EasyECS 可以生成 Hybrid Storage：
 
 ```text
-[ECS] int/float
+Unmanaged ECS Fields
 → Native SoA
 
-[ECS] string/object
-→ Managed SoA
+Managed ECS Fields
+→ Managed SoA Array
 
-[NotECS] int + string
-→ Managed AoS
+AoS Fields
+→ 如果全部 unmanaged，可进入 Native AoS
+→ 如果包含 managed 字段，则整个 AoS Block 使用 Managed Array
 ```
 
 因此：
 
-```text
-managed字段 ≠ 自动[NotECS]
-```
+> **一个 `string` 或 `object` 字段不会强迫整个 Struct 放弃 Unsafe Backend。**
 
-`string mName` 如果没有写 `[NotECS]`，它仍然是 ECS 字段，只是物理存储为 `string[]`，而不是 native pointer。
+只有不能进入 Native Memory 的字段自身使用托管存储。
 
 ---
 
-# ⚙ 自动 Backend
+## ⚙ Backend
 
-EasyECS 根据当前 Compilation 自动选择 Backend：
+EasyECS 在 Source Generator 阶段自动选择 Backend。
+
+逻辑近似为：
 
 ```text
 ECS_FORCE_SAFE_REGISTRY
         ↓
-   SafeRegistry
+SafeRegistry
 
-否则
-
-Allow Unsafe Code=true
-+
-存在可放入 Native Storage 的字段
+否则 Allow Unsafe Code = true
+并且存在 Native Storage
         ↓
-      Unsafe
+Unsafe
 
-否则
-
-Span<T>可用
-        ↓
-     SafeSpan
-
-否则
-        ↓
-   SafeRegistry
-```
-
-查看当前 Backend：
-
-```csharp
-Debug.Log(RoleDataECSList.BackendName);
-Debug.Log(RoleDataECSList.BackendReason);
-```
-
-常见 `BackendReason`：
-
-```text
-AllowUnsafe=true,Unmanaged=true
-AllowUnsafe=true,HybridStorage=true
-NoNativeStorage,Span=true
-ECS_FORCE_SAFE_REGISTRY
-SpanUnavailable
-```
-
-## Unsafe
-
-Unsafe 是最高性能路径。
-
-对于能够安全放入 Native Memory 的 unmanaged 数据，使用：
-
-```text
-Native Memory
-+
-64 Byte Alignment
-+
-Pointer
-```
-
-但现在 **Unsafe Backend 不再要求整个 Struct 都是 unmanaged**。
-
-Unsafe 支持 Hybrid Storage：
-
-```text
-一个Struct
-├─ Native SoA
-├─ Managed SoA
-└─ Native / Managed AoS
-```
-
-Storage 地址保持稳定，Resize 后 Ref 可以继续访问同一个 Storage 入口。
-
-## Managed 字段与 Hybrid Storage
-
-例如：
-
-```csharp
-[ECS]
-public struct RoleRuntimeData
-{
-	public int mHP;
-	public float mSpeed;
-	public string mName;
-	public object mPayload;
-	[NotECS] public int mID;
-	[NotECS] public string mModelPath;
-}
-```
-
-当：
-
-```text
-Allow Unsafe Code = true
-```
-
-时，物理存储拆分为：
-
-```text
-Native SoA
-├─ int*   mHP
-└─ float* mSpeed
-
-Managed SoA
-├─ string[] mName
-└─ object[] mPayload
-
-Managed AoS
-└─ RoleRuntimeDataAoSBlock[]
-   ├─ int mID
-   └─ string mModelPath
-```
-
-完整规则：
-
-```text
-[ECS] + unmanaged
-→ Native SoA（Unsafe Backend）
-
-[ECS] + managed
-→ Managed SoA
-
-[NotECS] 且AoS Block全部unmanaged
-→ Native AoS（Unsafe Backend）
-
-[NotECS] 的AoS Block只要包含managed字段
-→ 整个AoS Block使用Managed AoS
-```
-
-因此这些类型都可以正常出现在 EasyECS 数据中：
-
-```text
-string
-object
-array
-class reference
-UnityEngine.Object reference
-其他managed reference
-```
-
-只是这些字段本身不会进入 Native Memory。
-
-这解决了原先这种问题：
-
-```csharp
-[ECS]
-public struct RoleData
-{
-	public int mHP;
-	public float mPositionX;
-	public float mPositionY;
-	public string mName;
-}
-```
-
-旧的整 Struct 判断会因为 `mName` 是 `string`，让 `mHP / mPositionX / mPositionY` 一起失去 Unsafe。
-
-Hybrid Storage 下：
-
-```text
-mHP
-mPositionX
-mPositionY
-→ 继续走Native SoA
-
-mName
-→ string[]
-```
-
-少量业务引用字段不会再拖累整个热点 Struct。
-
-如果 Struct **完全没有任何可放入 Native Storage 的字段**，即使开启了 Allow Unsafe Code，也不会为了形式上使用 Unsafe 额外创建 Native Storage：
-
-```text
-No Native Storage Candidate
-        ↓
-Span<T>可用
+否则当前编译环境支持 Span<T>
         ↓
 SafeSpan
 
@@ -1365,395 +350,911 @@ SafeSpan
 SafeRegistry
 ```
 
-## SafeSpan
+### Unsafe
 
-SafeSpan 使用托管数组：
+用于存在 unmanaged 热点字段并允许 Unsafe 的情况。
 
-```text
-HP[]
-Speed[]
-PositionX[]
-PositionY[]
-string[]
-object[]
-```
+特点：
 
-并通过 Span / 稳定 Storage 入口访问。
+- Native SoA。
+- Native AoS（满足 unmanaged 条件时）。
+- Pointer-backed Direct Column。
+- 支持 managed 字段与 native 字段混合的 Hybrid Storage。
+- Resize 后已有 Ref 仍可保持指向稳定 Storage。
 
-它不使用 Native Memory，因此不会产生 Unsafe Native Allocation 的释放问题。
+### SafeSpan
 
-## SafeRegistry
+不允许 Unsafe 或没有 Native Storage 时的高性能安全路径。
 
-SafeRegistry 通过：
+特点：
 
-```text
-StorageID
-    ↓
-Static Registry
-    ↓
-Storage
-```
+- Managed Array Storage。
+- Span / ReadOnlySpan 友好的访问路径。
+- 不使用 Native Pointer。
+- 保持与 Unsafe 基本一致的业务 API。
 
-访问数据。
+### SafeRegistry
 
-主要定位：
+兼容 Backend。
 
-```text
-旧运行环境
-缺少Span<T>
-热更新兼容
-```
-
-而不是作为最高性能 Backend。
-
-如果需要强制测试 SafeRegistry，在当前 Build Target 的 Scripting Define Symbols 中加入：
+可以通过 Scripting Define Symbols 强制启用：
 
 ```text
 ECS_FORCE_SAFE_REGISTRY
 ```
 
-只要当前 Compilation 中存在该宏，就会强制：
+适合：
 
-```text
-SafeRegistry
-```
-
-它的优先级高于 Allow Unsafe Code 和 Span 检测。
+- 调试兼容路径。
+- 不具备 Span 支持的编译环境。
+- 需要显式验证最保守 Backend 的情况。
 
 ---
 
-# 🔒 Ref 与 Column 生命周期
+## ⚡ 三种访问层级
 
-## Ref
+EasyECS 不要求所有代码都使用 Direct Column。
 
-普通 Ref：
+推荐根据热点程度选择访问方式。
+
+### 1. 简单单字段
 
 ```csharp
-RoleDataRef role = list[i];
+roles[i].mHP -= 1;
 ```
 
-在 Resize 后仍然有效。
+适合普通逻辑。
 
-但是：
+### 2. 多字段访问
+
+推荐缓存 Ref：
+
+```csharp
+RoleDataRef role = roles[i];
+
+float speed = role.mSpeed;
+role.mHP -= 1;
+role.mPositionX += speed;
+role.mPositionY -= speed;
+```
+
+避免同一轮业务逻辑反复构造访问路径。
+
+### 3. 极端热点循环
+
+使用 Direct Column：
+
+```csharp
+var hp = roles.getHPColumn();
+var speed = roles.getSpeedColumn();
+var positionX = roles.getPositionXColumn();
+var positionY = roles.getPositionYColumn();
+
+for (int i = 0; i < roles.Count; ++i)
+{
+	hp[i] -= 1;
+	float curSpeed = speed[i];
+	positionX[i] += curSpeed;
+	positionY[i] -= curSpeed;
+}
+```
+
+推荐层级：
 
 ```text
+普通业务逻辑
+→ Ref
+
+简单单字段
+→ list[i] / dictionary[key]
+
+Profiler 确认的极端热点循环
+→ Direct Column
+```
+
+---
+
+## 📚 ECSList
+
+生成类型：
+
+```csharp
+<Type>ECSList
+```
+
+主要接口：
+
+```text
+Count
+Capacity
+Add
+Insert
+RemoveAt
+RemoveAtSwapBack
 Clear
-RemoveAtSwapBack影响到该元素
+Indexer
+Direct Column
 Dispose
 ```
 
-都会使对应 Ref 失效。
+### Add
+
+```csharp
+roles.Add(value);
+```
+
+摊销 O(1)。
+
+### Insert
+
+```csharp
+roles.Insert(index, value);
+```
+
+语义与 `List<T>.Insert` 一致：
+
+- `index == Count` 合法。
+- 保持元素顺序。
+- O(n)。
+
+### RemoveAt
+
+```csharp
+roles.RemoveAt(index);
+```
+
+语义与 `List<T>.RemoveAt` 一致：
+
+- 保持元素顺序。
+- O(n)。
+
+### RemoveAtSwapBack
+
+```csharp
+roles.RemoveAtSwapBack(index);
+```
+
+不保持顺序：
+
+```text
+删除 index
+↓
+最后一个元素移动到 index
+↓
+Count--
+```
+
+适合不关心顺序的热点容器，复杂度 O(1)。
 
 ---
 
-## Direct Column
+## 🗂 ECSDictionary
 
-Direct Column 为了获得最低访问成本，会直接保存最终数组 / 指针。
+生成类型：
 
-因此：
+```csharp
+<Type>ECSDictionary<TKey>
+```
+
+内部结构：
+
+```text
+Dictionary<TKey, int>
+        ↓
+    dense index
+        ↓
+<Type>ECSList
+```
+
+Key 查询仍由 BCL `Dictionary<TKey,int>` 负责，Value 使用 EasyECS 连续存储。
+
+主要接口：
 
 ```text
 Add
-Resize
-RemoveAtSwapBack
+TryAdd
+ContainsKey
+Indexer
+TryGetValue
+TryGetIndex
+Remove
 Clear
+Count
+Capacity
+Comparer
+getKeyAt
+getValueAt
+Keys
+Values
+foreach
+Direct Column
 Dispose
 ```
 
-之后旧 Column 都不能继续使用。
-
-需要时重新：
+### 随机访问
 
 ```csharp
-var hp = list.getHPColumn();
+roles[1001].mHP -= 10;
 ```
 
-即可。
-
----
-
-# 🛡 Editor 安全检测
-
-EasyECS 的原则是：
-
-> **Editor 强检查，Player 不为检查付费。**
-
-Editor 中会检测：
-
-* List 越界
-* Column 越界
-* Dispose 后访问
-* Clear 后旧 Ref
-* Remove 后旧 Ref
-* SwapBack 后失效 Ref
-* Add / Remove 后旧 Column
-* 遗漏 Dispose
-
-这些检查通过：
+或者：
 
 ```csharp
-#if UNITY_EDITOR
-#endif
+if (roles.TryGetValue(1001, out RoleDataRef role))
+{
+	role.mHP -= 10;
+}
 ```
 
-存在。
+### Dense 遍历
 
-Player 中会被裁掉，不进入字段访问热路径。
+```csharp
+for (int i = 0; i < roles.Count; ++i)
+{
+	RoleDataRef role = roles.getValueAt(i);
+	role.mHP -= 1;
+}
+```
+
+### Keys
+
+```csharp
+foreach (int key in roles.Keys)
+{
+	// ...
+}
+```
+
+Player 下对支持 Span 的环境使用高性能只读 Key 遍历路径。
+
+### Values
+
+```csharp
+foreach (RoleDataRef role in roles.Values)
+{
+	role.mHP -= 1;
+}
+```
+
+Values 返回可直接修改底层数据的 Ref。
+
+### Key + Value
+
+```csharp
+foreach (var item in roles)
+{
+	int key = item.Key;
+	RoleDataRef value = item.Value;
+}
+```
+
+### Remove
+
+Dictionary 的 `Remove` 使用 dense swap-back：
+
+```text
+Key -> dense index
+删除目标
+最后一个 Value / Key 移动到空位
+更新移动 Key 的 dense index
+```
 
 因此：
 
-> **Editor 性能 Benchmark 不代表最终 Player 性能。**
+> **ECSDictionary 不保证遍历顺序稳定。**
+
+如果业务依赖顺序，应单独维护顺序数据。
 
 ---
 
-# 🧯 遗漏 Dispose 检测
+## 🔗 Ref 生命周期
 
-Unsafe Backend 使用 Native Memory。
+EasyECS 的 Ref 是：
 
-EasyECS 在 Editor 中会自动记录 ECSList 生命周期：
+> **位置引用（position reference），不是永久实体身份句柄。**
 
-```text
-new ECSList
-    ↓
-自动登记
+### Resize
 
-Dispose
-    ↓
-自动注销
-```
+已有 Ref 可以跨 Resize 保持有效。
 
-如果忘记 Dispose：
+### Insert
 
 ```text
-遗漏Dispose
-    ↓
-自动检测
-    ↓
-输出错误
-    ↓
-打印创建堆栈
+Insert(index)
+
+旧 Ref index < 插入位置
+→ 保持有效
+
+旧 Ref index >= 插入位置
+→ 位置已经改变，不应继续当成原实体引用
+
+Insert(Count)
+→ 现有元素位置不变
 ```
 
-同时 Finalizer 会作为最后一道兜底释放机制。
+### RemoveAt
 
-三个 Backend 都提供统一的 `Dispose()` API。容器生命周期结束时建议主动调用 `Dispose()`：
+```text
+RemoveAt(index)
+
+旧 Ref index < 删除位置
+→ 保持有效
+
+旧 Ref index >= 删除位置
+→ 位置可能发生变化
+```
+
+### RemoveAtSwapBack / Dictionary Remove
+
+被删除位置和被移动元素相关的旧位置引用都不应继续作为原实体身份使用。
+
+### Clear / Dispose
+
+所有旧 Ref 失效。
+
+Editor 生成代码会增加生命周期、版本和边界检查，尽量让无效 Ref 尽早暴露。
+
+---
+
+## 📊 Direct Column 生命周期
+
+Direct Column 是临时字段视图，不是长期持有的 Collection。
+
+例如：
 
 ```csharp
-RoleDataECSList list = new RoleDataECSList();
+var hp = roles.getHPColumn();
+```
+
+拿到 Column 后，如果发生结构变化：
+
+```text
+Add
+Insert
+RemoveAt
+RemoveAtSwapBack
+Clear
+Resize
+Dispose
+```
+
+都不应该继续使用旧 Column。
+
+正确方式：
+
+```csharp
+var hp = roles.getHPColumn();
+
+for (int i = 0; i < roles.Count; ++i)
+{
+	hp[i] -= 1;
+}
+
+// 结构变化后重新获取
+roles.Add(value);
+hp = roles.getHPColumn();
+```
+
+---
+
+## 🛡 Editor Safety
+
+Editor 下生成代码会保留更多检查，例如：
+
+- Dispose 后访问检查。
+- Index 越界检查。
+- Ref 生命周期检查。
+- Column 结构版本检查。
+- Enumerator 结构版本检查。
+- Native allocation leak tracking。
+- Dictionary / List 结构变化检测。
+
+Player 下不会承担这些 Editor-only 检查成本。
+
+---
+
+## 🧹 Dispose
+
+三个 Backend 都提供统一：
+
+```csharp
+Dispose();
+```
+
+推荐：
+
+```csharp
+RoleDataECSList roles = new RoleDataECSList();
+
 try
 {
-	...
+	// ...
 }
 finally
 {
-	list.Dispose();
+	roles.Dispose();
 }
 ```
 
-`using` 可以使用，但不是 EasyECS 普通业务代码必须采用的写法。
+Unsafe Backend 会释放 Native Memory。
+
+SafeSpan / SafeRegistry 也保留统一 Dispose 与生命周期失效语义。
+
+重复 Dispose 已纳入 Runtime Unit Test。
 
 ---
 
-# 🧪 编译期诊断
+## 🧵 线程安全
 
-Source Generator 会对部分错误直接产生编译诊断：
+EasyECS 容器不是线程安全容器。
 
-| Diagnostic | 含义 |
+不要并发执行结构修改：
+
+```text
+Add
+Insert
+RemoveAt
+RemoveAtSwapBack
+Remove
+Clear
+Resize
+Dispose
+```
+
+也不要在一个线程进行结构变化时，让其他线程继续持有旧 Ref / Column 访问同一容器。
+
+如果项目需要多线程访问，应由业务层自行保证同步与生命周期。
+
+---
+
+## 🧪 Source Generator Diagnostics
+
+当前主要诊断：
+
+| Code | 说明 |
 |---|---|
-| `ECS001` | 同时标记 `[ECS]` 和 `[NotECS]` |
-| `ECS002` | 不支持的数据类型 |
-| `ECS003` | 不支持的字段 |
-| `ECS004` | 自动生成的 Column API 命名冲突 |
+| `ECS001` | `[ECS]` / `[NotECS]` 标签冲突 |
+| `ECS002` | 不支持生成的 ECS 类型 |
+| `ECS003` | 不支持生成的字段 |
+| `ECS004` | 生成的 Direct Column 方法名称冲突 |
 
-原则是：
-
-> **可以在编译阶段发现的问题，不拖到运行时。**
+Generator 会在编译阶段直接报告问题，而不是把错误拖到运行时。
 
 ---
 
-# 📁 源码目录
+## 🧪 Benchmark Sample
 
-EasyECS 源码位于 MyFramework：
+安装 Package 后执行：
 
 ```text
-https://github.com/ZHOURUIH/MyFramework
+EasyECS
+    Import Benchmark Sample
 ```
 
-目录：
+会导入 Benchmark Sample。
+
+当前 Sample 包括：
 
 ```text
-Packages/com.zhourui.easyecs/
-│
-├─ Analyzers/
-│  └─ ECSGenerator.dll
-│
-├─ Editor/
-│  ├─ EasyECSMenu.cs
-│  └─ EasyECS.Editor.asmdef
-│
-├─ Runtime/
-│  ├─ ECSAttribute.cs
-│  └─ EasyECS.Runtime.asmdef
-│
-├─ Samples~/
-│  └─ Benchmark/
-│
-├─ SourceGenerator~/
-│  ├─ ECSGenerator.sln
-│  ├─ ECSGenerator/
-│  └─ ECSGeneratorTest/
-│
-└─ package.json
+RoleDataBenchmark
+RoleDataDictionaryBenchmark
+RoleDataDictionaryEnumeratorBenchmark
+RoleDataListStructuralBenchmark
+EasyECSRuntimeUnitTest
 ```
 
-其中：
+主要用于：
+
+- List 正确性与性能测试。
+- Dictionary 正确性与性能测试。
+- Ref / Direct Column 测试。
+- Keys / Values / Enumerator 测试。
+- Insert / RemoveAt / SwapBack 测试。
+- Managed / Hybrid Storage 测试。
+- Backend 选择测试。
+- Runtime 生命周期回归。
+
+---
+
+## ✅ 1.1.0 最终验收
+
+最终 Runtime Unit Test：
 
 ```text
-Runtime
-    → Attribute等运行时接口
+Unsafe   : 59 / 59 PASS
+SafeSpan : 59 / 59 PASS
+```
 
-Analyzers
-    → 编译好的Source Generator
+最终性能验收环境：
 
-SourceGenerator~
-    → Generator完整源码
+```text
+Unity        : 6000.3.21f1
+Platform     : Windows x64 Player
+Scripting    : IL2CPP
+Build        : Release
+Graphics     : Direct3D 12
+GPU          : NVIDIA GeForce RTX 2060
+VRAM         : 5955 MB
+CPU Threads  : 32
 
-Samples~
-    → Benchmark测试代码
+EntityCount      : 500000
+SampleCount      : 15
+WarmupCount      : 3
+RandomWriteCount : 50000
+```
+
+> Benchmark 是微基准测试，用于比较同一环境、同一业务循环下的访问路径，不代表所有项目中的绝对性能。
+
+---
+
+## 📈 代表性性能结果
+
+以下数据为最终封版日志的 Median。
+
+### ECSList：修改 1 个字段
+
+单位：`ns / entity`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `RoleData[]` | 0.588 | 0.570 |
+| `ECS list[i]` | 0.486 | 0.713 |
+| `ECS Ref` | 0.488 | 0.713 |
+| `ECS Direct` | **0.320** | **0.366** |
+| `List<RoleData>` | 7.946 | 7.610 |
+
+### ECSList：访问 2 个字段
+
+单位：`ns / entity`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `RoleData[]` | 0.559 | 0.556 |
+| `ECS list[i]` | 0.708 | 1.237 |
+| `ECS Ref` | 0.534 | 0.888 |
+| `ECS Direct` | **0.236** | **0.440** |
+
+### ECSList：访问 4 个字段
+
+单位：`ns / entity`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `RoleData[]` | 1.087 | 0.917 |
+| `ECS list[i]` | 1.718 | 2.832 |
+| `ECS Ref` | 1.150 | 1.762 |
+| `ECS Direct` | **0.617** | **0.969** |
+
+### 4 字段读写访问路径拆解
+
+单位：`ns / entity`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| Raw SoA arrays | 0.946 | 0.899 |
+| repeated `list[i]` | 1.720 | 2.833 |
+| Local Ref | 1.150 | 1.764 |
+| Ref + cache repeated input | 0.997 | 1.525 |
+| Direct Column | **0.617** | **0.969** |
+
+这组数据对应 EasyECS 推荐的访问层级：
+
+```text
+单字段
+→ list[i]
+
+多字段
+→ Local Ref
+
+重复读取同一个输入字段
+→ Local Ref + 局部变量缓存
+
+极端热点
+→ Direct Column
 ```
 
 ---
 
-# 🧭 设计思路
+## 📈 ECSDictionary 性能
 
-EasyECS 主要遵循以下原则。
+### 随机 Key 读取
 
-### 1. 保留 OOP
+单位：`ns / op`
 
-不为了数据布局优化而强迫整个业务架构重写。
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `Dictionary<int,RoleData>` | 19.380 | **15.760** |
+| ECS Inline Indexer | 16.062 | 16.425 |
+| ECS Local Ref | **15.858** | 16.166 |
+| ECS TryGetValue | 15.920 | 16.709 |
 
-### 2. 渐进式优化
+随机 Key 访问仍然受 Hash Lookup 主导，因此 EasyECS 不承诺每一种随机查询都显著快于 BCL Dictionary。
 
-推荐流程：
+EasyECS 的主要优势来自：
+
+> **Key Lookup + Dense Value Storage + 后续连续批处理。**
+
+### 随机 Key 修改
+
+单位：`ns / op`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `Dictionary<int,RoleData>` | 24.754 | 24.722 |
+| ECS Inline Indexer | 15.404 | 15.772 |
+| ECS Local Ref | 15.826 | 15.708 |
+| ECS TryGetValue | **14.980** | **15.254** |
+
+### Dense 全量更新 + 10% 随机 Key 修改
+
+| 路径 | Unsafe Median | SafeSpan Median |
+|---|---:|---:|
+| `Dictionary<int,RoleData>` | 13.003 ms | 12.405 ms |
+| Manual `IndexMap + RoleData[]` | 1.348 ms | 1.250 ms |
+| `ECS Direct + LocalRef` | **0.893 ms** | **1.021 ms** |
+
+对应比例：
 
 ```text
-Profiler发现热点
-        ↓
-找到热点Struct
-        ↓
-添加[ECS]
-        ↓
-使用ECSList
-        ↓
-再次测试
+Unsafe:
+Standard Dictionary / ECS = 14.56x
+Manual / ECS              = 1.51x
+
+SafeSpan:
+Standard Dictionary / ECS = 12.15x
+Manual / ECS              = 1.22x
 ```
 
-### 3. Editor 查错，Player 不付费
-
-安全检测尽量留在开发阶段。
-
-### 4. 不为极端情况拖慢正常路径
-
-例如 EasyECS 不会为了让所有 Ref 在任意删除、移动后都保持永久稳定，而给 Player 热路径增加：
+这类场景正是 EasyECS 的主要目标：
 
 ```text
-Handle
-Generation
-Dictionary
-IndexMap
+需要随机 Key 定位
++
+每帧又需要对大量 Value 连续更新
 ```
-
-Ref 就是数据 View。
-
-如果业务需要稳定 Entity ID，应由业务层自己维护。
 
 ---
 
-# ⚠ 当前限制
+## 📈 Dictionary 遍历
 
-目前会主动限制部分复杂声明，例如：
+### Keys
 
-```text
-Nested Struct
-Generic Struct
-ref struct数据定义
-Instance Property
-readonly Field
-fixed Field
-```
+单位：`ns / op`
 
-另外：
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `for + getKeyAt` | 0.352 | 0.353 |
+| `foreach dict.Keys` | 0.377 | 0.361 |
 
-* Ref 不是稳定 Entity Handle。
-* `RemoveAtSwapBack` 会改变元素位置。
-* Direct Column 不能长期跨结构修改保存。
-* Unsafe Backend 中存在 Native Storage 时应主动 `Dispose()`。
-* ECSList / ECSDictionary 的 Resize、Remove、Clear、Dispose 当前不设计为线程安全结构操作。
-* managed 字段可以使用 EasyECS，也可以与 Unsafe Native Storage 共存，但 managed 字段自身仍由 GC 管理。
-* 如果 Struct 完全没有 Native Storage 候选，即使开启 Allow Unsafe Code，也会优先选择 SafeSpan，缺少 Span 时选择 SafeRegistry。
-* Hybrid Storage 会把含 managed 字段的 `[NotECS]` AoS Block 整体放入 Managed AoS，而不会把 managed reference 写入 Native Memory。
+### Values 修改 1 个字段
 
-这些限制主要是为了避免给正常热路径增加额外运行时成本。
+单位：`ns / op`
+
+| 路径 | Unsafe | SafeSpan |
+|---|---:|---:|
+| `for + getValueAt` | 0.723 | 0.897 |
+| `foreach dict + item.Value` | 0.411 | 0.638 |
+| `foreach dict.Values` | 0.395 | 0.549 |
+| Direct Column | **0.364** | **0.486** |
+
+最终版本中，`dict.Values` 已经接近 Direct Column，不再存在早期自定义 Enumerator 的高额开销。
 
 ---
 
-# ✅ 已验证环境
+## 📈 结构操作
 
-现有 Benchmark / Runtime 测试实际覆盖过：
-
-```text
-Unity 6000.3.21f1
-Windows x64
-Android ARM64
-IL2CPP
-```
-
-Android 真机曾分别验证：
+最终结构性能门槛：
 
 ```text
-Unsafe
-SafeSpan
-SafeRegistry
+存在真实数据移动的 Insert / RemoveAt
+ECS / List <= 1.05
 ```
 
-需要注意：
+最终 Unsafe：
 
-> **Managed Hybrid Unsafe 是上述真机验证之后新增的核心存储路径。**
+```text
+Insert Head        ECS/List = 0.989x PASS
+Insert Middle      ECS/List = 0.982x PASS
+RemoveAt Head      ECS/List = 0.312x PASS
+RemoveAt Middle    ECS/List = 0.315x PASS
 
-因此发布包含 Hybrid Storage 的版本前，应使用最新 Generator 与 Runtime Unit Test 再验证一次 Hybrid 路径；没有实际验证的平台不在 README 中宣称完整兼容。
+Hybrid Insert      ECS/List = 0.922x PASS
+Hybrid RemoveAt    ECS/List = 0.842x PASS
+```
+
+最终 SafeSpan：
+
+```text
+Insert Head        ECS/List = 1.014x PASS
+Insert Middle      ECS/List = 1.018x PASS
+RemoveAt Head      ECS/List = 0.992x PASS
+RemoveAt Middle    ECS/List = 0.993x PASS
+
+Hybrid Insert      ECS/List = 0.927x PASS
+Hybrid RemoveAt    ECS/List = 0.899x PASS
+```
+
+Tail Add/Insert/Remove 属于数纳秒级操作，因此不使用百分比作为硬性性能门槛。
 
 ---
 
-# 🔗 相关项目
+## 📦 Capacity / Resize
 
-### EasyECS 展示仓库
+EasyECS 的 SoA 结构在 Resize 时可能需要扩展多个字段列。
 
-```text
-https://github.com/ZHOURUIH/EasyECS
+对于预计会达到较大数量的容器，推荐：
+
+```csharp
+RoleDataECSList roles = new RoleDataECSList(expectedCount);
 ```
 
-> 当前仓库不是源码维护仓库。
+或者：
 
-### EasyECS 源码 / MyFramework
+```csharp
+RoleDataECSDictionary<int> roles = new RoleDataECSDictionary<int>(expectedCount);
+```
+
+也就是：
+
+> **已知规模时优先预留 Capacity，而不是依赖多次自动扩容。**
+
+Resize 是低频结构操作，不建议为了极少发生的 Resize 牺牲日常访问路径的简单性与连续列布局。
+
+---
+
+## 🧹 关于 GC
+
+EasyECS 的热点 API 设计目标之一是避免不必要的托管分配。
+
+但当前封版 Release Player 中，`ProfilerRecorder("GC.Alloc")` 的正向 SelfCheck 无法工作，因此 **0.1.0 README 不把无效的 0 结果写成“实测 0 GC”结论**。
+
+如果需要精确检查项目中的 managed allocation，建议：
 
 ```text
-https://github.com/ZHOURUIH/MyFramework
+Development Build
++
+Unity Profiler
++
+CPU Usage / GC.Alloc
 ```
+
+README 中的性能表只发布已经有效验证的 CPU 时间数据。
+
+---
+
+## 🏗 Source Generator
 
 源码目录：
+
+```text
+Packages/com.zhourui.easyecs/SourceGenerator~
+```
+
+发布 Package 中 Analyzer 位于：
+
+```text
+Packages/com.zhourui.easyecs/Analyzers/ECSGenerator.dll
+```
+
+普通使用者不需要手动编译 Generator。
+
+维护 Generator 时再进入 `SourceGenerator~` 编译并更新 Analyzer DLL。
+
+Source Generator 独立使用：
+
+```text
+netstandard2.0
+Microsoft.CodeAnalysis.CSharp 4.3.0
+```
+
+---
+
+## 📁 Package 目录
+
+```text
+Packages/com.zhourui.easyecs
+├── Analyzers
+│   └── ECSGenerator.dll
+├── Editor
+│   ├── EasyECS.Editor.asmdef
+│   └── EasyECSMenu.cs
+├── Runtime
+│   ├── EasyECS.Runtime.asmdef
+│   └── ECSAttribute.cs
+├── Samples~
+│   └── Benchmark
+├── SourceGenerator~
+│   ├── ECSGenerator
+│   └── ECSGeneratorTest
+├── CHANGELOG.md
+├── LICENSE.md
+├── README.md
+└── package.json
+```
+
+---
+
+## 🔄 HybridCLR / IL2CPP
+
+EasyECS 的工作阶段：
+
+```text
+业务代码
+    ↓
+C# Source Generator
+    ↓
+生成普通 C# 代码
+    ↓
+Unity C# 编译
+    ↓
+HybridCLR / Obfuz / IL2CPP
+```
+
+EasyECS 不依赖 IL Post Processor 修改已编译 IL。
+
+生成结果最终仍然是普通 C# 类型，因此可以继续进入 Unity 后续编译流程。
+
+---
+
+## ⚠️ 已知限制
+
+0.1.0 当前限制：
+
+- 只针对 `struct` 数据布局优化。
+- 不提供完整 ECS Entity / Component / System 框架。
+- 容器不是线程安全的。
+- Ref 是位置引用，不是永久实体身份。
+- Direct Column 不应跨结构变化长期持有。
+- `ECSDictionary.Remove` 使用 swap-back，不保证遍历顺序。
+- 大容器应尽量提前设置 Capacity。
+- SafeRegistry 是兼容后端，不是主要性能目标。
+- GC 的最终精确数据应使用 Development Build + Unity Profiler 检查。
+- Source Generator 对不支持的声明会直接产生编译诊断。
+
+---
+
+## 🗺 后续方向
+
+1.1.0 发布后，EasyECS 核心性能路径冻结。
+
+后续优先级应是：
+
+```text
+稳定性
+文档
+真实项目验证
+兼容性
+API完整度
+```
+
+而不是继续为了极小的纳秒差异增加 Generator 复杂度。
+
+---
+
+## 🤝 反馈
+
+Issue：
+
+```text
+https://github.com/ZHOURUIH/EasyECS/issues
+```
+
+源码仓库：
+
+```text
+https://github.com/ZHOURUIH/MyFramework
+```
+
+EasyECS Package：
 
 ```text
 Packages/com.zhourui.easyecs
 ```
 
-### MyServerFramework
-
-```text
-https://github.com/ZHOURUIH/MyServerFramework
-```
-
 ---
 
-# 📄 License
+## 📄 License
 
-请以源码仓库中的 License 为准。
+MIT License
+
+Copyright (c) 2026 zhourui
